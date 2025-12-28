@@ -1,0 +1,108 @@
+/* =========================================================
+   Quill HTML Renderer (Frontend)
+   This makes the website display EXACTLY like the admin editor
+   ========================================================= */
+
+/* Apply Quill editor styles to frontend output */
+.quill-content {
+  padding: 0;
+  line-height: 1.7;
+  background: transparent;
+  font-size: 16px; /* base font size EXACT like Quill */
+}
+
+/* -------------------------
+   LISTS (Tailwind reset fix)
+-------------------------- */
+.quill-content ul {
+  list-style-type: disc;
+  padding-left: 1.5rem;
+  margin: 0.75rem 0;
+}
+
+.quill-content ol {
+  list-style-type: decimal;
+  padding-left: 1.5rem;
+  margin: 0.75rem 0;
+}
+
+.quill-content li {
+  margin: 0.25rem 0;
+}
+
+/* -------------------------
+   ALIGNMENT
+-------------------------- */
+.quill-content .ql-align-center { text-align: center; }
+.quill-content .ql-align-right { text-align: right; }
+.quill-content .ql-align-left { text-align: left; }
+.quill-content .ql-align-justify { text-align: justify; }
+
+/* -------------------------
+   FONT SIZES (EXACT Quill)
+-------------------------- */
+.quill-content .ql-size-small {
+  font-size: 10px;
+}
+
+.quill-content .ql-size-large {
+  font-size: 18px;
+}
+
+.quill-content .ql-size-huge {
+  font-size: 32px;
+  line-height: 1.2;
+}
+
+/* -------------------------
+   HEADINGS (if used)
+-------------------------- */
+.quill-content h1 {
+  font-size: 32px;
+  line-height: 1.2;
+  margin: 0.5rem 0;
+}
+
+.quill-content h2 {
+  font-size: 24px;
+  line-height: 1.3;
+  margin: 0.5rem 0;
+}
+
+.quill-content h3 {
+  font-size: 20px;
+  line-height: 1.3;
+  margin: 0.5rem 0;
+}
+
+/* -------------------------
+   TEXT STYLES
+-------------------------- */
+.quill-content strong { font-weight: 700; }
+.quill-content em { font-style: italic; }
+.quill-content u { text-decoration: underline; }
+.quill-content s { text-decoration: line-through; }
+
+/* -------------------------
+   BLOCK SPACING
+-------------------------- */
+.quill-content p {
+  margin: 0.5rem 0;
+}
+
+/* -------------------------
+   IMAGES
+-------------------------- */
+.quill-content img {
+  max-width: 100%;
+  height: auto;
+  display: block;
+}
+
+/* -------------------------
+   LINKS
+-------------------------- */
+.quill-content a {
+  color: inherit;
+  text-decoration: underline;
+}
