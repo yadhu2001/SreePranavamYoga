@@ -7,12 +7,12 @@ import { loadPageSettings, PageSettings, createGetSetting } from '../utils/pageS
 interface Teacher {
   id: string;
   name: string;
-  title: string;
   bio: string;
   image_url: string;
-  specialties: string;
+  specialization: string;
   email: string;
-  display_order: number;
+  sort_order: number;
+  is_published: boolean;
 }
 
 export default function Teachers() {
@@ -20,26 +20,38 @@ export default function Teachers() {
   const [teachers, setTeachers] = useState<Teacher[]>([]);
   const [loading, setLoading] = useState(true);
   const [settings, setSettings] = useState<PageSettings>({});
+  const [errorMsg, setErrorMsg] = useState('');
 
   useEffect(() => {
     fetchTeachers();
     loadSettings();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentLanguage]);
 
   const fetchTeachers = async () => {
     try {
       setLoading(true);
+      setErrorMsg('');
+
       const { data, error } = await supabase
         .from('teachers')
         .select('*')
         .eq('is_published', true)
-        .order('display_order', { ascending: true });
+        .order('sort_order', { ascending: true });
 
-      if (error) throw error;
-      const translated = await translateList(data || [], ['name', 'title', 'bio', 'specialties']);
-      setTeachers(translated);
-    } catch (error) {
-      console.error('Error fetching teachers:', error);
+      if (error) {
+        console.error('Error fetching teachers:', error);
+        setErrorMsg(error.message);
+        setTeachers([]);
+        return;
+      }
+
+      const translated = await translateList(data || [], ['name', 'bio', 'specialization']);
+      setTeachers(translated as Teacher[]);
+    } catch (err: any) {
+      console.error('Error fetching teachers:', err);
+      setErrorMsg(err?.message || 'Unknown error');
+      setTeachers([]);
     } finally {
       setLoading(false);
     }
@@ -65,16 +77,31 @@ export default function Teachers() {
 
   return (
     <div className="bg-gray-50">
-
       {/* Hero Section */}
       <section className="bg-gradient-to-br from-primary-600 to-primary-700 text-white py-20">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
           <h1 className="text-5xl font-bold mb-6">{getSetting('page_heading', 'Our Teachers')}</h1>
           <p className="text-xl text-primary-50 max-w-3xl mx-auto">
-            {getSetting('page_subheading', 'Meet our experienced and dedicated instructors who are passionate about guiding you on your wellness journey')}
+            {getSetting(
+              'page_subheading',
+              'Meet our experienced and dedicated instructors who are passionate about guiding you on your wellness journey'
+            )}
           </p>
         </div>
       </section>
+
+      {/* Error banner (helps if RLS is blocking) */}
+      {errorMsg && (
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
+          <div className="bg-red-50 border border-red-200 text-red-700 p-4 rounded-lg">
+            <p className="font-semibold">Could not load teachers</p>
+            <p className="text-sm mt-1">{errorMsg}</p>
+            <p className="text-sm mt-2">
+              If this says “permission denied”, you need a Supabase RLS SELECT policy for anon users.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Teachers Grid */}
       <section className="py-16">
@@ -84,7 +111,9 @@ export default function Teachers() {
               <div className="inline-flex items-center justify-center w-20 h-20 bg-gray-100 rounded-full mb-4">
                 <BookOpen className="text-gray-400" size={40} />
               </div>
-              <h3 className="text-2xl font-bold text-gray-800 mb-2">{getSetting('no_teachers_heading', 'No Teachers Available')}</h3>
+              <h3 className="text-2xl font-bold text-gray-800 mb-2">
+                {getSetting('no_teachers_heading', 'No Teachers Available')}
+              </h3>
               <p className="text-gray-600">{getSetting('no_teachers_message', 'Check back soon to meet our instructors!')}</p>
             </div>
           ) : (
@@ -114,29 +143,39 @@ export default function Teachers() {
                     <h3 className="text-2xl font-bold text-gray-800 mb-2 group-hover:text-primary-600 transition">
                       {teacher.name}
                     </h3>
-                    <p className="text-primary-600 font-semibold mb-4">{teacher.title}</p>
+
+                    {/* specialization shown like a title */}
+                    {teacher.specialization && (
+                      <p className="text-primary-600 font-semibold mb-4">{teacher.specialization}</p>
+                    )}
 
                     <div
                       className="text-gray-600 mb-4 line-clamp-4"
                       dangerouslySetInnerHTML={{ __html: teacher.bio }}
                     />
 
-                    {/* Specialties */}
-                    {teacher.specialties && (
+                    {/* specialization chips (optional) */}
+                    {!!teacher.specialization?.trim() && teacher.specialization.includes(',') && (
                       <div className="mb-4">
                         <div className="flex items-center gap-2 mb-2">
                           <Award size={16} className="text-primary-600" />
-                          <span className="text-sm font-semibold text-gray-700">{getSetting('specialties_label', 'Specialties')}</span>
+                          <span className="text-sm font-semibold text-gray-700">
+                            {getSetting('specialties_label', 'Specialties')}
+                          </span>
                         </div>
                         <div className="flex flex-wrap gap-2">
-                          {teacher.specialties.split(',').map((specialty, index) => (
-                            <span
-                              key={index}
-                              className="px-3 py-1 bg-primary-50 text-primary-700 rounded-full text-xs font-medium"
-                            >
-                              {specialty.trim()}
-                            </span>
-                          ))}
+                          {teacher.specialization
+                            .split(',')
+                            .map((s) => s.trim())
+                            .filter(Boolean)
+                            .map((item, idx) => (
+                              <span
+                                key={idx}
+                                className="px-3 py-1 bg-primary-50 text-primary-700 rounded-full text-xs font-medium"
+                              >
+                                {item}
+                              </span>
+                            ))}
                         </div>
                       </div>
                     )}
@@ -149,7 +188,9 @@ export default function Teachers() {
                           className="flex items-center gap-2 text-primary-600 hover:text-primary-700 transition"
                         >
                           <Mail size={16} />
-                          <span className="text-sm font-medium">{getSetting('contact_teacher_button', 'Contact Teacher')}</span>
+                          <span className="text-sm font-medium">
+                            {getSetting('contact_teacher_button', 'Contact Teacher')}
+                          </span>
                         </a>
                       </div>
                     )}
