@@ -102,15 +102,18 @@ function AppContent() {
     }
   };
 
+  // ✅ Hide floating language switcher only on Home page
+  const isHomePage = currentPath === '/' || currentPath === '';
+
   return (
     <div className="flex flex-col min-h-screen">
       {!showAdmin && <EventNotificationBanner />}
       {!showAdmin && <Header onNavigate={navigate} currentPath={currentPath} />}
-      <main className="flex-1">
-        {renderPage()}
-      </main>
+      <main className="flex-1">{renderPage()}</main>
       {!showAdmin && <Footer />}
-      {!showAdmin && <FloatingLanguageSwitcher />}
+
+      {/* ✅ Hide only on Home */}
+      {!showAdmin && !isHomePage && <FloatingLanguageSwitcher />}
     </div>
   );
 }
