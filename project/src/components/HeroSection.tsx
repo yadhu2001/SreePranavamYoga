@@ -1,8 +1,17 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
-  Brain, Moon, Heart, Flame, CloudRain, Users,
-  Activity, Sparkles, Zap, HeartHandshake, Shield,
-  Circle
+  Brain,
+  Moon,
+  Heart,
+  Flame,
+  CloudRain,
+  Users,
+  Activity,
+  Sparkles,
+  Zap,
+  HeartHandshake,
+  Shield,
+  Circle,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useLanguage } from '../contexts/LanguageContext';
@@ -19,22 +28,34 @@ const iconMap: Record<string, any> = {
   Zap,
   HeartHandshake,
   Shield,
-  Circle
+  Circle,
 };
 
 interface Hero {
   id?: string;
+
+  // Desktop content
   title: string;
   subtitle: string;
+
+  // ✅ Mobile overrides (optional)
+  mobile_title?: string | null;
+  mobile_subtitle?: string | null;
+
   background_image: string;
   background_video?: string;
   cta_text?: string;
   cta_url?: string;
 
-  // ✅ must come from DB (admin saves these)
+  // Desktop font sizes
   title_font_size?: number | null;
   subtitle_font_size?: number | null;
   subtitle_same_as_title?: boolean | null;
+
+  // ✅ Mobile font sizes (optional overrides)
+  mobile_title_font_size?: number | null;
+  mobile_subtitle_font_size?: number | null;
+  mobile_subtitle_same_as_title?: boolean | null;
 }
 
 interface Solution {
@@ -54,10 +75,37 @@ interface HeroSectionProps {
 
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
 
-function getScale(w: number) {
-  if (w < 640) return 0.72;   // mobile
-  if (w < 1024) return 0.88;  // tablet
-  return 1;                   // desktop
+function useIsDesktop(breakpointPx = 640) {
+  const [isDesktop, setIsDesktop] = useState(false);
+
+  useEffect(() => {
+    const mq = window.matchMedia(`(min-width: ${breakpointPx}px)`);
+    const update = () => setIsDesktop(mq.matches);
+    update();
+    mq.addEventListener?.('change', update);
+    return () => mq.removeEventListener?.('change', update);
+  }, [breakpointPx]);
+
+  return isDesktop;
+}
+
+/**
+ * Builds clamp() font-size from a base px size.
+ * We use different tuning for mobile vs desktop rendering blocks.
+ */
+function fontClamp(basePx: number, kind: 'title' | 'subtitle', isMobile: boolean) {
+  const safe = basePx;
+
+  // More aggressive downscale for mobile to avoid cropping
+  const mobileScale = kind === 'title' ? 0.42 : 0.55;
+
+  const minPx = Math.round(safe * (isMobile ? mobileScale : 0.75));
+  const maxPx = Math.round(safe);
+
+  const vw = kind === 'title' ? (isMobile ? 5.0 : 3.2) : isMobile ? 2.0 : 1.2;
+  const add = kind === 'title' ? Math.round(safe * 0.12) : Math.round(safe * 0.18);
+
+  return `clamp(${minPx}px, ${add}px + ${vw}vw, ${maxPx}px)`;
 }
 
 export default function HeroSection({ onNavigate }: HeroSectionProps) {
@@ -66,14 +114,8 @@ export default function HeroSection({ onNavigate }: HeroSectionProps) {
   const [solutions, setSolutions] = useState<Solution[]>([]);
   const [settings, setSettings] = useState<PageSettings>({});
   const [loading, setLoading] = useState(true);
-  const [scale, setScale] = useState(1);
 
-  useEffect(() => {
-    const update = () => setScale(getScale(window.innerWidth));
-    update();
-    window.addEventListener('resize', update);
-    return () => window.removeEventListener('resize', update);
-  }, []);
+  const isDesktop = useIsDesktop(640);
 
   useEffect(() => {
     loadData();
@@ -92,34 +134,27 @@ export default function HeroSection({ onNavigate }: HeroSectionProps) {
         .limit(1)
         .maybeSingle(),
 
-      supabase
-        .from('solutions')
-        .select('*')
-        .eq('is_active', true)
-        .order('sort_order', { ascending: true }),
+      supabase.from('solutions').select('*').eq('is_active', true).order('sort_order', { ascending: true }),
 
-      supabase
-        .from('page_settings')
-        .select('key, value')
-        .eq('page', 'hero'),
+      supabase.from('page_settings').select('key, value').eq('page', 'hero'),
     ]);
 
-    // ✅ HERO (merge translated fields so font-size fields are NOT lost)
     if (heroData.data) {
-      const translatedPart = await translateContent(heroData.data, ['title', 'subtitle', 'cta_text']);
+      // translate desktop + mobile fields too (so mobile override works with language switch)
+      const translatedPart = await translateContent(heroData.data, [
+        'title',
+        'subtitle',
+        'cta_text',
+        'mobile_title',
+        'mobile_subtitle',
+      ]);
 
-      // IMPORTANT: keep ALL DB fields (font sizes included)
-      const mergedHero: Hero = {
-        ...(heroData.data as Hero),
-        ...(translatedPart as Partial<Hero>),
-      };
-
+      const mergedHero: Hero = { ...(heroData.data as Hero), ...(translatedPart as Partial<Hero>) };
       setHero(mergedHero);
     } else {
       setHero(null);
     }
 
-    // ✅ SOLUTIONS
     if (solutionsData.data) {
       const translated = await translateList(solutionsData.data, ['title']);
       setSolutions(translated as Solution[]);
@@ -127,7 +162,6 @@ export default function HeroSection({ onNavigate }: HeroSectionProps) {
       setSolutions([]);
     }
 
-    // ✅ SETTINGS
     if (settingsData.data) {
       const settingsMap = settingsData.data.reduce((acc, { key, value }) => {
         acc[key] = value;
@@ -154,38 +188,107 @@ export default function HeroSection({ onNavigate }: HeroSectionProps) {
     else window.location.href = hero.cta_url;
   };
 
-  // ✅ calculate dynamic sizes from DB (responsive)
-  const { titlePx, subtitlePx, hasDynamicSizes } = useMemo(() => {
-    if (!hero) return { titlePx: null as number | null, subtitlePx: null as number | null, hasDynamicSizes: false };
-
-    const t = hero.title_font_size;
-    const same = hero.subtitle_same_as_title;
-    const s = same ? t : hero.subtitle_font_size;
-
-    const ok = typeof t === 'number' && typeof same === 'boolean' && typeof s === 'number';
-
-    if (!ok) {
-      // If these are missing, hero still renders using Tailwind fallback classes (NOT blank)
-      console.warn('Hero font sizes missing from DB for this row:', {
-        id: hero.id,
-        title_font_size: hero.title_font_size,
-        subtitle_font_size: hero.subtitle_font_size,
-        subtitle_same_as_title: hero.subtitle_same_as_title,
-      });
-      return { titlePx: null, subtitlePx: null, hasDynamicSizes: false };
+  /**
+   * Resolve effective font sizes:
+   * - Desktop uses desktop fields
+   * - Mobile uses mobile_* if present, otherwise falls back to desktop fields
+   */
+  const computed = useMemo(() => {
+    if (!hero) {
+      return {
+        hasDynamicSizes: false,
+        desktopTitleStyle: undefined as React.CSSProperties | undefined,
+        desktopSubtitleStyle: undefined as React.CSSProperties | undefined,
+        mobileTitleStyle: undefined as React.CSSProperties | undefined,
+        mobileSubtitleStyle: undefined as React.CSSProperties | undefined,
+      };
     }
 
-    const safeTitle = clamp(t!, 14, 140);
-    const safeSub = clamp(s!, 12, 120);
+    // ---------- Desktop sizes ----------
+    const dt = hero.title_font_size;
+    const dSame = hero.subtitle_same_as_title;
+    const ds = dSame ? dt : hero.subtitle_font_size;
+
+    const desktopOk = typeof dt === 'number' && typeof dSame === 'boolean' && typeof ds === 'number';
+
+    // ---------- Mobile sizes (optional overrides) ----------
+    const mtRaw = hero.mobile_title_font_size;
+    const mSameRaw = hero.mobile_subtitle_same_as_title;
+    const msRaw = mSameRaw ? mtRaw : hero.mobile_subtitle_font_size;
+
+    const mobileOk = typeof mtRaw === 'number' && typeof mSameRaw === 'boolean' && typeof msRaw === 'number';
+
+    // Use desktop as fallback for mobile if mobile fields are not set
+    const effMobileTitle = mobileOk ? mtRaw! : desktopOk ? dt! : null;
+    const effMobileSub = mobileOk ? msRaw! : desktopOk ? ds! : null;
+
+    if (!desktopOk && !mobileOk) {
+      return {
+        hasDynamicSizes: false,
+        desktopTitleStyle: undefined,
+        desktopSubtitleStyle: undefined,
+        mobileTitleStyle: undefined,
+        mobileSubtitleStyle: undefined,
+      };
+    }
+
+    const safeDesktopTitle = desktopOk ? clamp(dt!, 14, 140) : null;
+    const safeDesktopSub = desktopOk ? clamp(ds!, 12, 120) : null;
+
+    const safeMobileTitle = effMobileTitle != null ? clamp(effMobileTitle, 12, 120) : null;
+    const safeMobileSub = effMobileSub != null ? clamp(effMobileSub, 12, 120) : null;
 
     return {
-      titlePx: Math.round(safeTitle * scale),
-      subtitlePx: Math.round(safeSub * scale),
       hasDynamicSizes: true,
-    };
-  }, [hero, scale]);
 
-  // ✅ don’t show blank while loading
+      desktopTitleStyle:
+        safeDesktopTitle == null
+          ? undefined
+          : ({
+              fontSize: fontClamp(safeDesktopTitle, 'title', false),
+              lineHeight: 1.06,
+              overflowWrap: 'anywhere',
+              wordBreak: 'break-word',
+              hyphens: 'auto',
+            } as React.CSSProperties),
+
+      desktopSubtitleStyle:
+        safeDesktopSub == null
+          ? undefined
+          : ({
+              fontSize: fontClamp(safeDesktopSub, 'subtitle', false),
+              lineHeight: 1.45,
+              overflowWrap: 'anywhere',
+              wordBreak: 'break-word',
+            } as React.CSSProperties),
+
+      mobileTitleStyle:
+        safeMobileTitle == null
+          ? undefined
+          : ({
+              fontSize: fontClamp(safeMobileTitle, 'title', true),
+              lineHeight: 1.06,
+              overflowWrap: 'anywhere',
+              wordBreak: 'break-word',
+              hyphens: 'auto',
+              maxWidth: '92vw',
+              marginInline: 'auto',
+            } as React.CSSProperties),
+
+      mobileSubtitleStyle:
+        safeMobileSub == null
+          ? undefined
+          : ({
+              fontSize: fontClamp(safeMobileSub, 'subtitle', true),
+              lineHeight: 1.45,
+              overflowWrap: 'anywhere',
+              wordBreak: 'break-word',
+              maxWidth: '92vw',
+              marginInline: 'auto',
+            } as React.CSSProperties),
+    };
+  }, [hero]);
+
   if (loading) {
     return (
       <div className="relative min-h-[520px] sm:min-h-[600px] flex items-center justify-center bg-black/10">
@@ -196,65 +299,49 @@ export default function HeroSection({ onNavigate }: HeroSectionProps) {
 
   if (!hero) return null;
 
+  // ✅ mobile text override fallback
+  const mobileTitle = hero.mobile_title?.trim() ? hero.mobile_title : hero.title;
+  const mobileSubtitle = hero.mobile_subtitle?.trim() ? hero.mobile_subtitle : hero.subtitle;
+
+  const desktopTitle = hero.title;
+  const desktopSubtitle = hero.subtitle;
+
+  // ✅ solutions loop only for desktop animation
+  const loopSolutions = isDesktop ? [...solutions, ...solutions] : solutions;
+
   return (
-    <div className="relative min-h-[520px] sm:min-h-[600px] flex items-center justify-center overflow-hidden">
+    <div className="relative min-h-[520px] sm:min-h-[600px] overflow-hidden">
       {/* Background */}
       <div className="absolute inset-0">
         {hero.background_video ? (
-          <video
-            className="w-full h-full object-cover"
-            src={hero.background_video}
-            autoPlay
-            loop
-            muted
-            playsInline
-          />
+          <video className="w-full h-full object-cover" src={hero.background_video} autoPlay loop muted playsInline />
         ) : (
-          <div
-            className="absolute inset-0 bg-cover bg-center"
-            style={{ backgroundImage: `url(${hero.background_image})` }}
-          />
+          <div className="absolute inset-0 bg-cover bg-center" style={{ backgroundImage: `url(${hero.background_image})` }} />
         )}
-
-        <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/30 to-black/50" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black/40 via-black/30 to-black/60" />
       </div>
 
-      <div className="relative z-10 max-w-7xl mx-auto px-4 py-14 sm:py-20 text-center">
-        {/* Title */}
-        <h1
-          className={
-            hasDynamicSizes
-              ? 'font-bold text-white mb-5 sm:mb-6 animate-fade-in leading-tight'
-              : 'text-5xl md:text-6xl lg:text-7xl font-bold text-white mb-6 animate-fade-in'
-          }
-          style={
-            hasDynamicSizes
-              ? { fontSize: `${titlePx}px`, lineHeight: 1.08, wordBreak: 'break-word' }
-              : undefined
-          }
-        >
-          {hero.title}
+      {/* =========================
+          ✅ MOBILE SECTION
+      ========================== */}
+      <div className="relative z-10 sm:hidden px-4 pt-14 pb-10 text-center">
+        <h1 className="font-bold text-white mb-3 animate-fade-in" style={computed.mobileTitleStyle}>
+          {mobileTitle}
         </h1>
 
-        {/* Subtitle */}
-        <div className="text-white/90 mb-10 sm:mb-12 max-w-3xl mx-auto animate-fade-in-delay">
+        <div className="text-white/90 mb-7 mx-auto animate-fade-in-delay">
           <div
             className="ql-editor quill-content"
-            style={
-              hasDynamicSizes
-                ? { fontSize: `${subtitlePx}px`, lineHeight: 1.45, wordBreak: 'break-word' }
-                : undefined
-            }
-            dangerouslySetInnerHTML={{ __html: hero.subtitle }}
+            style={computed.mobileSubtitleStyle}
+            dangerouslySetInnerHTML={{ __html: mobileSubtitle }}
           />
         </div>
 
-        {/* CTA */}
         {hero.cta_text && hero.cta_url && (
           <div className="flex justify-center animate-fade-in-delay-2">
             <button
               onClick={handleCtaClick}
-              className="bg-primary-600 text-white px-7 sm:px-8 py-3 rounded-lg hover:bg-primary-700 transition text-base sm:text-lg font-semibold shadow-lg"
+              className="bg-primary-600 text-white px-6 py-3 rounded-lg hover:bg-primary-700 transition text-sm font-semibold shadow-lg"
             >
               {hero.cta_text}
             </button>
@@ -262,23 +349,25 @@ export default function HeroSection({ onNavigate }: HeroSectionProps) {
         )}
 
         {solutions.length > 0 && (
-          <div className="mt-12 sm:mt-16">
-            <h3 className="text-xl sm:text-2xl font-semibold text-white mb-6 sm:mb-8 animate-fade-in-delay-2">
+          <div className="mt-8">
+            <h3 className="text-lg font-semibold text-white mb-4">
               {getSetting('solutions_heading', 'Solutions Offered...')}
             </h3>
 
-            <div className="relative overflow-hidden">
-              <div className="flex gap-3 sm:gap-4 animate-scroll-slow">
-                {[...solutions, ...solutions].map((solution, index) => {
+            {/* ✅ MOBILE: horizontal scroll (no animation) */}
+            <div className="overflow-x-auto pb-2 -mx-4 px-4">
+              <div className="flex gap-3 w-max">
+                {solutions.map((solution) => {
                   const IconComponent = getIconComponent(solution.icon);
                   return (
                     <div
-                      key={`${solution.id}-${index}`}
+                      key={solution.id}
                       onClick={() => handleSolutionClick(solution.slug)}
-                      className="flex-shrink-0 w-24 h-24 sm:w-32 sm:h-32 bg-white/10 backdrop-blur-sm rounded-full flex flex-col items-center justify-center gap-1 sm:gap-2 hover:bg-white/20 transition-all duration-300 cursor-pointer group border border-white/20"
+                      className="w-20 h-20 bg-white/10 backdrop-blur-sm rounded-full flex flex-col items-center justify-center
+                                 gap-1 hover:bg-white/20 transition cursor-pointer border border-white/20"
                     >
-                      <IconComponent className="w-6 h-6 sm:w-8 sm:h-8 text-white group-hover:scale-110 transition-transform" />
-                      <span className="text-white text-xs sm:text-sm font-medium text-center px-2">
+                      <IconComponent className="w-5 h-5 text-white" />
+                      <span className="text-white text-[10px] font-medium text-center px-2 leading-tight">
                         {solution.title}
                       </span>
                     </div>
@@ -288,6 +377,75 @@ export default function HeroSection({ onNavigate }: HeroSectionProps) {
             </div>
           </div>
         )}
+      </div>
+
+      {/* =========================
+          ✅ DESKTOP SECTION
+      ========================== */}
+      <div className="relative z-10 hidden sm:flex min-h-[600px] items-center justify-center">
+        <div className="w-full max-w-7xl mx-auto px-4 py-16 text-center">
+          <h1
+            className={
+              computed.hasDynamicSizes
+                ? 'font-bold text-white mb-5 sm:mb-6 animate-fade-in'
+                : 'text-5xl md:text-6xl lg:text-7xl font-bold text-white mb-6 animate-fade-in'
+            }
+            style={computed.desktopTitleStyle}
+          >
+            {desktopTitle}
+          </h1>
+
+          <div className="text-white/90 mb-10 sm:mb-12 max-w-3xl mx-auto animate-fade-in-delay">
+            <div
+              className="ql-editor quill-content"
+              style={computed.desktopSubtitleStyle}
+              dangerouslySetInnerHTML={{ __html: desktopSubtitle }}
+            />
+          </div>
+
+          {hero.cta_text && hero.cta_url && (
+            <div className="flex justify-center animate-fade-in-delay-2">
+              <button
+                onClick={handleCtaClick}
+                className="bg-primary-600 text-white px-7 sm:px-8 py-3 rounded-lg hover:bg-primary-700 transition text-base sm:text-lg font-semibold shadow-lg"
+              >
+                {hero.cta_text}
+              </button>
+            </div>
+          )}
+
+          {solutions.length > 0 && (
+            <div className="mt-12 sm:mt-16">
+              <h3 className="text-xl sm:text-2xl font-semibold text-white mb-6 sm:mb-8 animate-fade-in-delay-2">
+                {getSetting('solutions_heading', 'Solutions Offered...')}
+              </h3>
+
+              {/* ✅ DESKTOP: scrolling loop */}
+              <div className="relative overflow-hidden">
+                <div className="flex gap-4 animate-scroll-slow">
+                  {loopSolutions.map((solution, index) => {
+                    const IconComponent = getIconComponent(solution.icon);
+
+                    return (
+                      <div
+                        key={`${solution.id}-${index}`}
+                        onClick={() => handleSolutionClick(solution.slug)}
+                        className="flex-shrink-0 w-28 h-28 lg:w-32 lg:h-32 bg-white/10 backdrop-blur-sm rounded-full
+                                   flex flex-col items-center justify-center gap-2 hover:bg-white/20 transition-all
+                                   duration-300 cursor-pointer group border border-white/20"
+                      >
+                        <IconComponent className="w-7 h-7 lg:w-8 lg:h-8 text-white group-hover:scale-110 transition-transform" />
+                        <span className="text-white text-xs lg:text-sm font-medium text-center px-2 leading-tight">
+                          {solution.title}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       <style>{`
@@ -301,25 +459,12 @@ export default function HeroSection({ onNavigate }: HeroSectionProps) {
           100% { transform: translateX(-50%); }
         }
 
-        .animate-fade-in {
-          animation: fade-in 1s ease-out;
-        }
+        .animate-fade-in { animation: fade-in 1s ease-out; }
+        .animate-fade-in-delay { animation: fade-in 1s ease-out 0.2s backwards; }
+        .animate-fade-in-delay-2 { animation: fade-in 1s ease-out 0.4s backwards; }
 
-        .animate-fade-in-delay {
-          animation: fade-in 1s ease-out 0.2s backwards;
-        }
-
-        .animate-fade-in-delay-2 {
-          animation: fade-in 1s ease-out 0.4s backwards;
-        }
-
-        .animate-scroll-slow {
-          animation: scroll-slow 30s linear infinite;
-        }
-
-        .animate-scroll-slow:hover {
-          animation-play-state: paused;
-        }
+        .animate-scroll-slow { animation: scroll-slow 30s linear infinite; }
+        .animate-scroll-slow:hover { animation-play-state: paused; }
 
         .ql-editor { padding: 0 !important; }
         .ql-editor p { margin: 0.5em 0; }

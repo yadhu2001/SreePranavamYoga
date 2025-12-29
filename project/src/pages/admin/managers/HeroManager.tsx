@@ -15,10 +15,17 @@ interface Hero {
   is_active: boolean;
   sort_order: number;
 
-  // dynamic fields (must be present in DB)
+  // desktop dynamic
   title_font_size: number | null;
   subtitle_font_size: number | null;
   subtitle_same_as_title: boolean | null;
+
+  // ✅ mobile overrides
+  mobile_title: string | null;
+  mobile_subtitle: string | null;
+  mobile_title_font_size: number | null;
+  mobile_subtitle_font_size: number | null;
+  mobile_subtitle_same_as_title: boolean | null;
 }
 
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
@@ -96,10 +103,16 @@ export default function HeroManager() {
       is_active: true,
       sort_order: 0,
 
-      // ✅ no defaults in code
       title_font_size: null,
       subtitle_font_size: null,
       subtitle_same_as_title: false,
+
+      // ✅ mobile override defaults empty/null
+      mobile_title: null,
+      mobile_subtitle: null,
+      mobile_title_font_size: null,
+      mobile_subtitle_font_size: null,
+      mobile_subtitle_same_as_title: false,
     });
   };
 
@@ -118,26 +131,49 @@ export default function HeroManager() {
   const handleSave = async () => {
     if (!formData) return;
 
-    // ✅ Block save if dynamic values are missing
+    // ✅ Desktop validation (required)
     if (formData.title_font_size == null) {
-      alert('Please set Title Font Size.');
+      alert('Please set Desktop Title Font Size.');
       return;
     }
 
-    const same = !!formData.subtitle_same_as_title;
-
-    if (!same && formData.subtitle_font_size == null) {
-      alert('Please set Subtitle Font Size (or enable Same size as Title).');
+    const sameDesktop = !!formData.subtitle_same_as_title;
+    if (!sameDesktop && formData.subtitle_font_size == null) {
+      alert('Please set Desktop Subtitle Font Size (or enable Same size as Title).');
       return;
     }
 
-    const payload = {
+    // ✅ Mobile validation (optional)
+    // If admin filled mobile_title_font_size then enforce mobile subtitle too (unless same)
+    const sameMobile = !!formData.mobile_subtitle_same_as_title;
+
+    if (formData.mobile_title_font_size != null) {
+      if (!sameMobile && formData.mobile_subtitle_font_size == null) {
+        alert('Please set Mobile Subtitle Font Size (or enable Same size as Mobile Title).');
+        return;
+      }
+    }
+
+    const payload: Hero = {
       ...formData,
-      title_font_size: clamp(formData.title_font_size, 14, 120),
-      subtitle_same_as_title: same,
-      subtitle_font_size: same
+
+      // Desktop clamp
+      title_font_size: clamp(formData.title_font_size, 14, 140),
+      subtitle_same_as_title: sameDesktop,
+      subtitle_font_size: sameDesktop
         ? clamp(formData.title_font_size, 12, 120)
         : clamp(formData.subtitle_font_size as number, 12, 120),
+
+      // Mobile clamp (only if provided)
+      mobile_subtitle_same_as_title: sameMobile,
+      mobile_title_font_size:
+        formData.mobile_title_font_size == null ? null : clamp(formData.mobile_title_font_size, 12, 120),
+      mobile_subtitle_font_size:
+        formData.mobile_title_font_size == null
+          ? null
+          : sameMobile
+          ? clamp(formData.mobile_title_font_size, 12, 120)
+          : clamp(formData.mobile_subtitle_font_size as number, 12, 120),
     };
 
     if (editingId) {
@@ -183,10 +219,15 @@ export default function HeroManager() {
     }
   };
 
-  const effectiveSubtitleSize =
+  const effectiveDesktopSubtitleSize =
     formData?.subtitle_same_as_title && formData?.title_font_size != null
       ? formData.title_font_size
       : formData?.subtitle_font_size;
+
+  const effectiveMobileSubtitleSize =
+    formData?.mobile_subtitle_same_as_title && formData?.mobile_title_font_size != null
+      ? formData.mobile_title_font_size
+      : formData?.mobile_subtitle_font_size;
 
   return (
     <div>
@@ -204,116 +245,207 @@ export default function HeroManager() {
         <div className="bg-white rounded-lg shadow-lg p-6 mb-6">
           <h3 className="text-xl font-bold mb-4">{editingId ? 'Edit' : 'Create'} Hero Section</h3>
 
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium mb-1">Title</label>
-              <input
-                type="text"
-                value={formData.title}
-                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
-              />
-            </div>
+          <div className="space-y-8">
+            {/* =========================
+               DESKTOP SETTINGS
+            ========================== */}
+            <div className="border rounded-lg p-4">
+              <h4 className="font-bold text-lg mb-4">Desktop Content</h4>
 
-            <FontSizeControl
-              label="Title Font Size"
-              value={formData.title_font_size}
-              onChange={(v) =>
-                setFormData((prev) =>
-                  prev
-                    ? {
-                        ...prev,
-                        title_font_size: v,
-                        subtitle_font_size: prev.subtitle_same_as_title ? v : prev.subtitle_font_size,
-                      }
-                    : prev
-                )
-              }
-            />
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Title (Desktop)</label>
+                  <input
+                    type="text"
+                    value={formData.title}
+                    onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
 
-            <div className="flex items-center justify-between">
-              <label className="block text-sm font-medium">Subtitle</label>
-              <label className="flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={!!formData.subtitle_same_as_title}
-                  onChange={(e) => {
-                    const checked = e.target.checked;
-                    setFormData({
-                      ...formData,
-                      subtitle_same_as_title: checked,
-                      subtitle_font_size: checked ? formData.title_font_size : formData.subtitle_font_size,
-                    });
-                  }}
+                <FontSizeControl
+                  label="Title Font Size (Desktop)"
+                  value={formData.title_font_size}
+                  onChange={(v) =>
+                    setFormData((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            title_font_size: v,
+                            subtitle_font_size: prev.subtitle_same_as_title ? v : prev.subtitle_font_size,
+                          }
+                        : prev
+                    )
+                  }
+                  min={14}
+                  max={140}
                 />
-                <span>Same size as Title</span>
-              </label>
-            </div>
 
-            <RichTextEditor
-              value={formData.subtitle}
-              onChange={(value) => setFormData({ ...formData, subtitle: value })}
-              placeholder="Enter subtitle text..."
-            />
+                <div className="flex items-center justify-between">
+                  <label className="block text-sm font-medium">Subtitle (Desktop)</label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={!!formData.subtitle_same_as_title}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setFormData({
+                          ...formData,
+                          subtitle_same_as_title: checked,
+                          subtitle_font_size: checked ? formData.title_font_size : formData.subtitle_font_size,
+                        });
+                      }}
+                    />
+                    <span>Same size as Title</span>
+                  </label>
+                </div>
 
-            <FontSizeControl
-              label="Subtitle Font Size"
-              value={effectiveSubtitleSize ?? null}
-              onChange={(v) => setFormData({ ...formData, subtitle_font_size: v })}
-              disabled={!!formData.subtitle_same_as_title}
-            />
-
-            <ImageUpload
-              label="Background Image"
-              value={formData.background_image}
-              onChange={(url) => setFormData({ ...formData, background_image: url })}
-            />
-
-            <div>
-              <label className="block text-sm font-medium mb-1">Background Video URL (Optional)</label>
-              <input
-                type="text"
-                value={formData.background_video}
-                onChange={(e) => setFormData({ ...formData, background_video: e.target.value })}
-                className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
-              />
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium mb-1">CTA Button Text</label>
-                <input
-                  type="text"
-                  value={formData.cta_text}
-                  onChange={(e) => setFormData({ ...formData, cta_text: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
+                <RichTextEditor
+                  value={formData.subtitle}
+                  onChange={(value) => setFormData({ ...formData, subtitle: value })}
+                  placeholder="Enter subtitle text..."
                 />
-              </div>
-              <div>
-                <label className="block text-sm font-medium mb-1">CTA Button URL</label>
-                <input
-                  type="text"
-                  value={formData.cta_url}
-                  onChange={(e) => setFormData({ ...formData, cta_url: e.target.value })}
-                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
+
+                <FontSizeControl
+                  label="Subtitle Font Size (Desktop)"
+                  value={effectiveDesktopSubtitleSize ?? null}
+                  onChange={(v) => setFormData({ ...formData, subtitle_font_size: v })}
+                  disabled={!!formData.subtitle_same_as_title}
                 />
               </div>
             </div>
-          </div>
 
-          <div className="flex gap-2 mt-6">
-            <button
-              onClick={handleSave}
-              className="bg-primary-600 text-white px-6 py-2 rounded-lg hover:bg-primary-700 flex items-center gap-2"
-            >
-              <Save size={18} /> Save
-            </button>
-            <button
-              onClick={resetForm}
-              className="bg-gray-300 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-400 flex items-center gap-2"
-            >
-              <X size={18} /> Cancel
-            </button>
+            {/* =========================
+               MOBILE OVERRIDES
+            ========================== */}
+            <div className="border rounded-lg p-4">
+              <h4 className="font-bold text-lg mb-2">Mobile Overrides (Optional)</h4>
+              <p className="text-sm text-gray-500 mb-4">
+                Fill these only if you want different text/font sizes on mobile. If empty, desktop content will be used.
+              </p>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">Title (Mobile)</label>
+                  <input
+                    type="text"
+                    value={formData.mobile_title ?? ''}
+                    onChange={(e) => setFormData({ ...formData, mobile_title: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
+                    placeholder="Leave blank to use Desktop Title"
+                  />
+                </div>
+
+                <FontSizeControl
+                  label="Title Font Size (Mobile)"
+                  value={formData.mobile_title_font_size}
+                  onChange={(v) =>
+                    setFormData((prev) =>
+                      prev
+                        ? {
+                            ...prev,
+                            mobile_title_font_size: v,
+                            mobile_subtitle_font_size: prev.mobile_subtitle_same_as_title ? v : prev.mobile_subtitle_font_size,
+                          }
+                        : prev
+                    )
+                  }
+                  min={12}
+                  max={90}
+                />
+
+                <div className="flex items-center justify-between">
+                  <label className="block text-sm font-medium">Subtitle (Mobile)</label>
+                  <label className="flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={!!formData.mobile_subtitle_same_as_title}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setFormData({
+                          ...formData,
+                          mobile_subtitle_same_as_title: checked,
+                          mobile_subtitle_font_size: checked ? formData.mobile_title_font_size : formData.mobile_subtitle_font_size,
+                        });
+                      }}
+                    />
+                    <span>Same size as Mobile Title</span>
+                  </label>
+                </div>
+
+                <RichTextEditor
+                  value={formData.mobile_subtitle ?? ''}
+                  onChange={(value) => setFormData({ ...formData, mobile_subtitle: value })}
+                  placeholder="Leave blank to use Desktop Subtitle"
+                />
+
+                <FontSizeControl
+                  label="Subtitle Font Size (Mobile)"
+                  value={effectiveMobileSubtitleSize ?? null}
+                  onChange={(v) => setFormData({ ...formData, mobile_subtitle_font_size: v })}
+                  disabled={!!formData.mobile_subtitle_same_as_title}
+                  min={12}
+                  max={70}
+                />
+              </div>
+            </div>
+
+            {/* =========================
+               COMMON
+            ========================== */}
+            <div className="space-y-4">
+              <ImageUpload
+                label="Background Image"
+                value={formData.background_image}
+                onChange={(url) => setFormData({ ...formData, background_image: url })}
+              />
+
+              <div>
+                <label className="block text-sm font-medium mb-1">Background Video URL (Optional)</label>
+                <input
+                  type="text"
+                  value={formData.background_video}
+                  onChange={(e) => setFormData({ ...formData, background_video: e.target.value })}
+                  className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
+                />
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-sm font-medium mb-1">CTA Button Text</label>
+                  <input
+                    type="text"
+                    value={formData.cta_text}
+                    onChange={(e) => setFormData({ ...formData, cta_text: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium mb-1">CTA Button URL</label>
+                  <input
+                    type="text"
+                    value={formData.cta_url}
+                    onChange={(e) => setFormData({ ...formData, cta_url: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="flex gap-2 mt-2">
+              <button
+                onClick={handleSave}
+                className="bg-primary-600 text-white px-6 py-2 rounded-lg hover:bg-primary-700 flex items-center gap-2"
+              >
+                <Save size={18} /> Save
+              </button>
+              <button
+                onClick={resetForm}
+                className="bg-gray-300 text-gray-700 px-6 py-2 rounded-lg hover:bg-gray-400 flex items-center gap-2"
+              >
+                <X size={18} /> Cancel
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -336,9 +468,15 @@ export default function HeroManager() {
                     <span className="text-xs px-2 py-1 bg-gray-100 text-gray-600 rounded">Inactive</span>
                   )}
                 </div>
+
                 <p className="text-xs text-gray-500">
-                  Title: {hero.title_font_size ?? 'NULL'}px • Subtitle:{' '}
+                  Desktop: {hero.title_font_size ?? 'NULL'}px •{' '}
                   {(hero.subtitle_same_as_title ? hero.title_font_size : hero.subtitle_font_size) ?? 'NULL'}px
+                </p>
+
+                <p className="text-xs text-gray-500">
+                  Mobile: {hero.mobile_title_font_size ?? 'NULL'}px •{' '}
+                  {(hero.mobile_subtitle_same_as_title ? hero.mobile_title_font_size : hero.mobile_subtitle_font_size) ?? 'NULL'}px
                 </p>
               </div>
 
