@@ -298,12 +298,12 @@ export default function Header({ onNavigate, currentPath }: HeaderProps) {
               );
             })}
 
-            <button
+            {/* <button
               onClick={() => handleNavigate('/admin')}
               className="block w-full text-left px-4 py-2 bg-primary-600 text-white rounded hover:bg-primary-700 transition"
             >
               {getSetting('admin_button', 'Admin')}
-            </button>
+            </button> */}
           </nav>
         )}
       </div>
