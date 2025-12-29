@@ -424,7 +424,7 @@ export default function AboutUsManager() {
               />
 
               <div className="border-t border-gray-200 pt-6 mt-6">
-                <h4 className="text-lg font-bold text-gray-800 mb-4">Vision, Mission & Core Values</h4>
+                <h4 className="text-lg font-bold text-gray-800 mb-4">Vision, Mission & Our Actvities</h4>
 
                 <div className="space-y-4">
                   <div>
@@ -448,7 +448,7 @@ export default function AboutUsManager() {
                   </div>
 
                   <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-2">Core Values</label>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Our Activities</label>
                     <RichTextEditor
                       value={editingSettings.core_values || ''}
                       onChange={(value) =>

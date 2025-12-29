@@ -179,7 +179,7 @@ export default function HeroSection({ onNavigate }: HeroSectionProps) {
         {solutions.length > 0 && (
           <div className="mt-16">
             <h3 className="text-2xl font-semibold text-white mb-8 animate-fade-in-delay-2">
-              {getSetting('solutions_heading', 'Find a solution for...')}
+              {getSetting('solutions_heading', 'Solutions Offered...')}
             </h3>
 
             <div className="relative overflow-hidden">
