@@ -6,8 +6,12 @@ import ImageUpload from '../../../components/ImageUpload';
 
 interface Hero {
   id?: string;
-  title: string;
-  subtitle: string;
+
+  // DESKTOP TEXT (3 sections)
+  title: string;         // "Transformative"
+  middle_text: string;   // "With"
+  subtitle: string;      // "Acharya Praveen" (can be simple text or rich text)
+
   background_image: string;
   background_video: string;
   cta_text: string;
@@ -15,17 +19,19 @@ interface Hero {
   is_active: boolean;
   sort_order: number;
 
-  // desktop dynamic
+  // DESKTOP FONT SIZES
   title_font_size: number | null;
+  middle_font_size: number | null;
   subtitle_font_size: number | null;
-  subtitle_same_as_title: boolean | null;
 
-  // ✅ mobile overrides
+  // MOBILE OVERRIDES (optional)
   mobile_title: string | null;
+  mobile_middle_text: string | null;
   mobile_subtitle: string | null;
+
   mobile_title_font_size: number | null;
+  mobile_middle_font_size: number | null;
   mobile_subtitle_font_size: number | null;
-  mobile_subtitle_same_as_title: boolean | null;
 }
 
 const clamp = (n: number, min: number, max: number) => Math.min(max, Math.max(min, n));
@@ -35,7 +41,7 @@ function FontSizeControl({
   value,
   onChange,
   min = 12,
-  max = 120,
+  max = 140,
   disabled = false,
 }: {
   label: string;
@@ -93,9 +99,12 @@ export default function HeroManager() {
   const startCreate = () => {
     setEditingId(null);
     setIsCreating(true);
+
     setFormData({
       title: '',
+      middle_text: '',
       subtitle: '',
+
       background_image: '',
       background_video: '',
       cta_text: '',
@@ -104,15 +113,16 @@ export default function HeroManager() {
       sort_order: 0,
 
       title_font_size: null,
+      middle_font_size: null,
       subtitle_font_size: null,
-      subtitle_same_as_title: false,
 
-      // ✅ mobile override defaults empty/null
       mobile_title: null,
+      mobile_middle_text: null,
       mobile_subtitle: null,
+
       mobile_title_font_size: null,
+      mobile_middle_font_size: null,
       mobile_subtitle_font_size: null,
-      mobile_subtitle_same_as_title: false,
     });
   };
 
@@ -131,49 +141,26 @@ export default function HeroManager() {
   const handleSave = async () => {
     if (!formData) return;
 
-    // ✅ Desktop validation (required)
-    if (formData.title_font_size == null) {
-      alert('Please set Desktop Title Font Size.');
-      return;
-    }
-
-    const sameDesktop = !!formData.subtitle_same_as_title;
-    if (!sameDesktop && formData.subtitle_font_size == null) {
-      alert('Please set Desktop Subtitle Font Size (or enable Same size as Title).');
-      return;
-    }
-
-    // ✅ Mobile validation (optional)
-    // If admin filled mobile_title_font_size then enforce mobile subtitle too (unless same)
-    const sameMobile = !!formData.mobile_subtitle_same_as_title;
-
-    if (formData.mobile_title_font_size != null) {
-      if (!sameMobile && formData.mobile_subtitle_font_size == null) {
-        alert('Please set Mobile Subtitle Font Size (or enable Same size as Mobile Title).');
-        return;
-      }
-    }
+    // ✅ Required desktop sizes
+    if (formData.title_font_size == null) return alert('Please set Desktop Title Font Size.');
+    if (formData.middle_font_size == null) return alert('Please set Desktop Middle Text Font Size.');
+    if (formData.subtitle_font_size == null) return alert('Please set Desktop Subtitle Font Size.');
 
     const payload: Hero = {
       ...formData,
 
-      // Desktop clamp
+      // clamp desktop
       title_font_size: clamp(formData.title_font_size, 14, 140),
-      subtitle_same_as_title: sameDesktop,
-      subtitle_font_size: sameDesktop
-        ? clamp(formData.title_font_size, 12, 120)
-        : clamp(formData.subtitle_font_size as number, 12, 120),
+      middle_font_size: clamp(formData.middle_font_size, 10, 120),
+      subtitle_font_size: clamp(formData.subtitle_font_size, 10, 120),
 
-      // Mobile clamp (only if provided)
-      mobile_subtitle_same_as_title: sameMobile,
+      // clamp mobile if provided
       mobile_title_font_size:
         formData.mobile_title_font_size == null ? null : clamp(formData.mobile_title_font_size, 12, 120),
+      mobile_middle_font_size:
+        formData.mobile_middle_font_size == null ? null : clamp(formData.mobile_middle_font_size, 10, 100),
       mobile_subtitle_font_size:
-        formData.mobile_title_font_size == null
-          ? null
-          : sameMobile
-          ? clamp(formData.mobile_title_font_size, 12, 120)
-          : clamp(formData.mobile_subtitle_font_size as number, 12, 120),
+        formData.mobile_subtitle_font_size == null ? null : clamp(formData.mobile_subtitle_font_size, 10, 110),
     };
 
     if (editingId) {
@@ -200,6 +187,7 @@ export default function HeroManager() {
     ) {
       return;
     }
+
     const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
     const current = heroes[currentIndex];
     const target = heroes[targetIndex];
@@ -219,15 +207,9 @@ export default function HeroManager() {
     }
   };
 
-  const effectiveDesktopSubtitleSize =
-    formData?.subtitle_same_as_title && formData?.title_font_size != null
-      ? formData.title_font_size
-      : formData?.subtitle_font_size;
-
-  const effectiveMobileSubtitleSize =
-    formData?.mobile_subtitle_same_as_title && formData?.mobile_title_font_size != null
-      ? formData.mobile_title_font_size
-      : formData?.mobile_subtitle_font_size;
+  if (!formData) {
+    // still show list even without create/edit open
+  }
 
   return (
     <div>
@@ -247,151 +229,148 @@ export default function HeroManager() {
 
           <div className="space-y-8">
             {/* =========================
-               DESKTOP SETTINGS
+                DESKTOP CONTENT (3 parts)
             ========================== */}
             <div className="border rounded-lg p-4">
               <h4 className="font-bold text-lg mb-4">Desktop Content</h4>
 
               <div className="space-y-4">
+                {/* Title */}
                 <div>
-                  <label className="block text-sm font-medium mb-1">Title (Desktop)</label>
+                  <label className="block text-sm font-medium mb-1">Title (Top)</label>
                   <input
                     type="text"
                     value={formData.title}
                     onChange={(e) => setFormData({ ...formData, title: e.target.value })}
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
+                    placeholder="e.g. Transformative"
                   />
                 </div>
 
                 <FontSizeControl
                   label="Title Font Size (Desktop)"
                   value={formData.title_font_size}
-                  onChange={(v) =>
-                    setFormData((prev) =>
-                      prev
-                        ? {
-                            ...prev,
-                            title_font_size: v,
-                            subtitle_font_size: prev.subtitle_same_as_title ? v : prev.subtitle_font_size,
-                          }
-                        : prev
-                    )
-                  }
+                  onChange={(v) => setFormData({ ...formData, title_font_size: v })}
                   min={14}
                   max={140}
                 />
 
-                <div className="flex items-center justify-between">
-                  <label className="block text-sm font-medium">Subtitle (Desktop)</label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={!!formData.subtitle_same_as_title}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setFormData({
-                          ...formData,
-                          subtitle_same_as_title: checked,
-                          subtitle_font_size: checked ? formData.title_font_size : formData.subtitle_font_size,
-                        });
-                      }}
-                    />
-                    <span>Same size as Title</span>
-                  </label>
+                {/* Middle text */}
+                <div>
+                  <label className="block text-sm font-medium mb-1">Middle Text (Center)</label>
+                  <input
+                    type="text"
+                    value={formData.middle_text}
+                    onChange={(e) => setFormData({ ...formData, middle_text: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
+                    placeholder="e.g. With"
+                  />
+                  <p className="text-xs text-gray-500 mt-1">
+                    This controls only the middle word/sentence (example: “With”).
+                  </p>
                 </div>
 
-                <RichTextEditor
-                  value={formData.subtitle}
-                  onChange={(value) => setFormData({ ...formData, subtitle: value })}
-                  placeholder="Enter subtitle text..."
+                <FontSizeControl
+                  label="Middle Text Font Size (Desktop)"
+                  value={formData.middle_font_size}
+                  onChange={(v) => setFormData({ ...formData, middle_font_size: v })}
+                  min={10}
+                  max={120}
                 />
+
+                {/* Subtitle */}
+                <div>
+                  <label className="block text-sm font-medium mb-1">Subtitle (Bottom)</label>
+                  <input
+                    type="text"
+                    value={formData.subtitle}
+                    onChange={(e) => setFormData({ ...formData, subtitle: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
+                    placeholder="e.g. Acharya Praveen"
+                  />
+                </div>
 
                 <FontSizeControl
                   label="Subtitle Font Size (Desktop)"
-                  value={effectiveDesktopSubtitleSize ?? null}
+                  value={formData.subtitle_font_size}
                   onChange={(v) => setFormData({ ...formData, subtitle_font_size: v })}
-                  disabled={!!formData.subtitle_same_as_title}
+                  min={10}
+                  max={120}
                 />
               </div>
             </div>
 
             {/* =========================
-               MOBILE OVERRIDES
+                MOBILE OVERRIDES (optional)
             ========================== */}
             <div className="border rounded-lg p-4">
               <h4 className="font-bold text-lg mb-2">Mobile Overrides (Optional)</h4>
               <p className="text-sm text-gray-500 mb-4">
-                Fill these only if you want different text/font sizes on mobile. If empty, desktop content will be used.
+                If left empty, desktop content will be used on mobile.
               </p>
 
               <div className="space-y-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1">Title (Mobile)</label>
+                  <label className="block text-sm font-medium mb-1">Mobile Title</label>
                   <input
                     type="text"
                     value={formData.mobile_title ?? ''}
                     onChange={(e) => setFormData({ ...formData, mobile_title: e.target.value })}
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
-                    placeholder="Leave blank to use Desktop Title"
+                    placeholder="Optional"
                   />
                 </div>
 
                 <FontSizeControl
-                  label="Title Font Size (Mobile)"
+                  label="Mobile Title Font Size"
                   value={formData.mobile_title_font_size}
-                  onChange={(v) =>
-                    setFormData((prev) =>
-                      prev
-                        ? {
-                            ...prev,
-                            mobile_title_font_size: v,
-                            mobile_subtitle_font_size: prev.mobile_subtitle_same_as_title ? v : prev.mobile_subtitle_font_size,
-                          }
-                        : prev
-                    )
-                  }
+                  onChange={(v) => setFormData({ ...formData, mobile_title_font_size: v })}
                   min={12}
                   max={90}
                 />
 
-                <div className="flex items-center justify-between">
-                  <label className="block text-sm font-medium">Subtitle (Mobile)</label>
-                  <label className="flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={!!formData.mobile_subtitle_same_as_title}
-                      onChange={(e) => {
-                        const checked = e.target.checked;
-                        setFormData({
-                          ...formData,
-                          mobile_subtitle_same_as_title: checked,
-                          mobile_subtitle_font_size: checked ? formData.mobile_title_font_size : formData.mobile_subtitle_font_size,
-                        });
-                      }}
-                    />
-                    <span>Same size as Mobile Title</span>
-                  </label>
+                <div>
+                  <label className="block text-sm font-medium mb-1">Mobile Middle Text</label>
+                  <input
+                    type="text"
+                    value={formData.mobile_middle_text ?? ''}
+                    onChange={(e) => setFormData({ ...formData, mobile_middle_text: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
+                    placeholder="Optional"
+                  />
                 </div>
 
-                <RichTextEditor
-                  value={formData.mobile_subtitle ?? ''}
-                  onChange={(value) => setFormData({ ...formData, mobile_subtitle: value })}
-                  placeholder="Leave blank to use Desktop Subtitle"
+                <FontSizeControl
+                  label="Mobile Middle Text Font Size"
+                  value={formData.mobile_middle_font_size}
+                  onChange={(v) => setFormData({ ...formData, mobile_middle_font_size: v })}
+                  min={10}
+                  max={70}
                 />
 
+                <div>
+                  <label className="block text-sm font-medium mb-1">Mobile Subtitle</label>
+                  <input
+                    type="text"
+                    value={formData.mobile_subtitle ?? ''}
+                    onChange={(e) => setFormData({ ...formData, mobile_subtitle: e.target.value })}
+                    className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
+                    placeholder="Optional"
+                  />
+                </div>
+
                 <FontSizeControl
-                  label="Subtitle Font Size (Mobile)"
-                  value={effectiveMobileSubtitleSize ?? null}
+                  label="Mobile Subtitle Font Size"
+                  value={formData.mobile_subtitle_font_size}
                   onChange={(v) => setFormData({ ...formData, mobile_subtitle_font_size: v })}
-                  disabled={!!formData.mobile_subtitle_same_as_title}
-                  min={12}
-                  max={70}
+                  min={10}
+                  max={80}
                 />
               </div>
             </div>
 
             {/* =========================
-               COMMON
+                BACKGROUND / CTA
             ========================== */}
             <div className="space-y-4">
               <ImageUpload
@@ -420,6 +399,7 @@ export default function HeroManager() {
                     className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
                   />
                 </div>
+
                 <div>
                   <label className="block text-sm font-medium mb-1">CTA Button URL</label>
                   <input
@@ -450,6 +430,7 @@ export default function HeroManager() {
         </div>
       )}
 
+      {/* LIST */}
       <div className="grid gap-4">
         {heroes.map((hero, index) => (
           <div
@@ -470,13 +451,8 @@ export default function HeroManager() {
                 </div>
 
                 <p className="text-xs text-gray-500">
-                  Desktop: {hero.title_font_size ?? 'NULL'}px •{' '}
-                  {(hero.subtitle_same_as_title ? hero.title_font_size : hero.subtitle_font_size) ?? 'NULL'}px
-                </p>
-
-                <p className="text-xs text-gray-500">
-                  Mobile: {hero.mobile_title_font_size ?? 'NULL'}px •{' '}
-                  {(hero.mobile_subtitle_same_as_title ? hero.mobile_title_font_size : hero.mobile_subtitle_font_size) ?? 'NULL'}px
+                  Desktop sizes: Title {hero.title_font_size ?? 'NULL'}px • Middle {hero.middle_font_size ?? 'NULL'}px •
+                  Subtitle {hero.subtitle_font_size ?? 'NULL'}px
                 </p>
               </div>
 
