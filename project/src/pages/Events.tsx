@@ -144,36 +144,29 @@ export default function Events() {
                 className={`
                   bg-white rounded-xl overflow-hidden shadow-md hover:shadow-xl transition
                   w-full ${event.is_featured ? 'max-w-5xl' : 'max-w-4xl'}
+                  md:min-h-[440px]
                 `}
               >
-                {/* ✅ FIX: poster + FIXED content width (no 1fr stretch) */}
-                <div
-                  className={
-                    event.is_featured
-                      ? 'grid md:grid-cols-[280px_minmax(320px,520px)] justify-center'
-                      : 'grid md:grid-cols-[280px_minmax(320px,520px)] justify-center'
-                  }
-                >
-                  {/* Poster */}
+                {/* ✅ IMPORTANT: no justify-center (it created left whitespace).
+                    Poster column touches left edge of the card. */}
+                <div className="grid md:grid-cols-[320px_minmax(320px,520px)] items-stretch h-full">
+                  {/* Poster: touches card edges */}
                   <button
                     type="button"
                     onClick={() => openPoster(imageUrl, title)}
-                    className="w-full cursor-zoom-in focus:outline-none"
+                    className="block w-full h-full cursor-zoom-in focus:outline-none"
                     aria-label="Open poster"
                   >
                     <img
                       src={imageUrl}
                       alt={title}
                       loading="lazy"
-                      className={`
-                        w-full object-contain bg-white
-                        ${event.is_featured ? 'h-[240px] sm:h-[280px] md:h-[320px]' : 'h-[220px] sm:h-[240px]'}
-                      `}
+                      className="block w-full h-full object-cover"
                     />
                   </button>
 
-                  {/* ✅ FIX: content cannot stretch wider than 520px */}
-                  <div className="p-6 flex flex-col w-full max-w-[520px]">
+                  {/* Content */}
+                  <div className="p-6 flex flex-col w-full max-w-[520px] h-full">
                     <div className="mb-3 min-h-[28px] flex flex-wrap gap-2">
                       {event.is_featured && (
                         <span className="inline-block text-xs font-semibold px-3 py-1 bg-amber-100 text-amber-700 rounded-full">
