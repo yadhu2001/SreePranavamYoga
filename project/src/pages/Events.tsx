@@ -20,6 +20,13 @@ interface Event {
   is_published?: boolean | null;
 }
 
+function safeDate(v?: string | null) {
+  if (!v) return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
+}
+
 export default function Events() {
   const { currentLanguage, translateList } = useLanguage();
   const [events, setEvents] = useState<Event[]>([]);
@@ -49,12 +56,22 @@ export default function Events() {
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [posterOpen]);
 
+  /**
+   * ✅ Requirements:
+   * - Show events even if event_date is null
+   * - No "Date TBA" badge
+   * - No "Date to be announced" text line
+   * - Sort: featured -> upcoming -> no-date -> past
+   */
   const loadEvents = async () => {
-    const { data, error } = await supabase
-      .from('events')
-      .select('*')
-      .eq('is_published', true)
-      .order('event_date', { ascending: true });
+    const runQuery = async (publishedValue: any) => {
+      return await supabase.from('events').select('*').eq('is_published', publishedValue);
+    };
+
+    let res = await runQuery('true');
+    if (res.error) res = await runQuery(true);
+
+    const { data, error } = res;
 
     if (error) {
       console.error('Load events error:', error);
@@ -62,25 +79,49 @@ export default function Events() {
       return;
     }
 
-    if (!data) {
-      setEvents([]);
-      return;
-    }
-
+    const list = (data as Event[]) || [];
     const now = new Date();
 
-    // only future events
-    const upcomingEvents = (data as Event[]).filter((event) => {
-      const base = event.end_date ?? event.event_date ?? null;
-      if (!base) return false;
+    const featured: Event[] = [];
+    const upcoming: Event[] = [];
+    const noDate: Event[] = [];
+    const past: Event[] = [];
 
-      const d = new Date(base);
-      if (Number.isNaN(d.getTime())) return false;
+    list.forEach((ev) => {
+      const isFeatured = Boolean(ev.is_featured);
 
-      return d > now;
+      const base = ev.end_date ?? ev.event_date ?? null;
+      const d = safeDate(base);
+
+      if (isFeatured) {
+        featured.push(ev);
+        return;
+      }
+
+      if (!base || !d) {
+        noDate.push(ev);
+        return;
+      }
+
+      if (d >= now) upcoming.push(ev);
+      else past.push(ev);
     });
 
-    const translated = await translateList(upcomingEvents, ['title', 'description', 'location']);
+    const dateSorterAsc = (a: Event, b: Event) => {
+      const da = safeDate(a.end_date ?? a.event_date ?? null)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+      const db = safeDate(b.end_date ?? b.event_date ?? null)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+      return da - db;
+    };
+
+    featured.sort(dateSorterAsc);
+    upcoming.sort(dateSorterAsc);
+    noDate.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+    past.sort(dateSorterAsc);
+
+    // keep past hidden (enable if needed)
+    const ordered = [...featured, ...upcoming, ...noDate /*, ...past*/];
+
+    const translated = await translateList(ordered, ['title', 'description', 'location']);
     setEvents(translated as Event[]);
   };
 
@@ -92,9 +133,8 @@ export default function Events() {
   const getSetting = useMemo(() => createGetSetting(settings), [settings]);
 
   const formatDate = (dateString?: string | null) => {
-    if (!dateString) return '';
-    const d = new Date(dateString);
-    if (Number.isNaN(d.getTime())) return '';
+    const d = safeDate(dateString);
+    if (!d) return '';
     return d.toLocaleDateString('en-US', {
       year: 'numeric',
       month: 'long',
@@ -105,10 +145,9 @@ export default function Events() {
   };
 
   const isUpcoming = (dateString?: string | null) => {
-    if (!dateString) return false;
-    const d = new Date(dateString);
-    if (Number.isNaN(d.getTime())) return false;
-    return d > new Date();
+    const d = safeDate(dateString);
+    if (!d) return false;
+    return d >= new Date();
   };
 
   const safeHtml = (html?: string | null) => ({ __html: html || '' });
@@ -123,7 +162,7 @@ export default function Events() {
     <div className="min-h-screen bg-gray-50 py-12">
       <div className="max-w-5xl mx-auto px-4">
         <div className="text-center mb-12">
-          <h1 className="text-5xl font-bold mb-4">{getSetting('page_heading', 'Upcoming Events')}</h1>
+          <h1 className="text-5xl font-bold mb-4">{getSetting('page_heading', 'Events')}</h1>
           <p className="text-xl text-gray-600 max-w-2xl mx-auto">
             {getSetting('page_subheading', 'Join us for transformative workshops, retreats, and celebrations')}
           </p>
@@ -138,6 +177,8 @@ export default function Events() {
             const hasInternalForm = Boolean(event.form_id);
             const hasExternalUrl = Boolean(!event.form_id && event.registration_url);
 
+            const badgeDateBase = event.end_date ?? event.event_date ?? null;
+
             return (
               <div
                 key={event.id}
@@ -147,21 +188,20 @@ export default function Events() {
                   md:min-h-[440px]
                 `}
               >
-                {/* ✅ IMPORTANT: no justify-center (it created left whitespace).
-                    Poster column touches left edge of the card. */}
-                <div className="grid md:grid-cols-[320px_minmax(320px,520px)] items-stretch h-full">
-                  {/* Poster: touches card edges */}
+                {/* 🔧 Poster width a bit bigger for clarity */}
+                <div className="grid md:grid-cols-[380px_minmax(320px,520px)] items-stretch h-full">
+                  {/* ✅ Poster MUST show full clearly (no crop, no padding) */}
                   <button
                     type="button"
                     onClick={() => openPoster(imageUrl, title)}
-                    className="block w-full h-full cursor-zoom-in focus:outline-none"
+                    className="w-full h-full bg-white flex items-center justify-center cursor-zoom-in focus:outline-none"
                     aria-label="Open poster"
                   >
                     <img
                       src={imageUrl}
                       alt={title}
                       loading="lazy"
-                      className="block w-full h-full object-cover"
+                      className="w-full h-full object-contain"
                     />
                   </button>
 
@@ -173,7 +213,9 @@ export default function Events() {
                           {getSetting('featured_badge', 'Featured Event')}
                         </span>
                       )}
-                      {event.event_date && isUpcoming(event.event_date) && (
+
+                      {/* ✅ show Upcoming badge only if date exists and future */}
+                      {badgeDateBase && isUpcoming(badgeDateBase) && (
                         <span className="inline-block text-xs font-semibold px-3 py-1 bg-green-100 text-green-700 rounded-full">
                           {getSetting('upcoming_badge', 'Upcoming')}
                         </span>
@@ -185,19 +227,16 @@ export default function Events() {
                     </h3>
 
                     <div className="space-y-3 mb-5">
-                      <div className="flex items-start gap-3 text-gray-600">
-                        <Calendar size={20} className="mt-1 flex-shrink-0" />
-                        <div className="leading-relaxed">
-                          {event.event_date ? (
-                            <>
-                              <p className="m-0">{formatDate(event.event_date)}</p>
-                              {event.end_date && <p className="m-0 text-sm">to {formatDate(event.end_date)}</p>}
-                            </>
-                          ) : (
-                            <p className="m-0">Date to be announced</p>
-                          )}
+                      {/* ✅ if event_date missing, DO NOT show Date row */}
+                      {event.event_date && (
+                        <div className="flex items-start gap-3 text-gray-600">
+                          <Calendar size={20} className="mt-1 flex-shrink-0" />
+                          <div className="leading-relaxed">
+                            <p className="m-0">{formatDate(event.event_date)}</p>
+                            {event.end_date && <p className="m-0 text-sm">to {formatDate(event.end_date)}</p>}
+                          </div>
                         </div>
-                      </div>
+                      )}
 
                       <div className="flex items-start gap-3 text-gray-600">
                         <MapPin size={20} className="mt-1 flex-shrink-0" />
@@ -248,9 +287,7 @@ export default function Events() {
 
         {events.length === 0 && (
           <div className="text-center py-12">
-            <p className="text-xl text-gray-500">
-              {getSetting('no_events_message', 'No upcoming events at this time. Check back soon!')}
-            </p>
+            <p className="text-xl text-gray-500">{getSetting('no_events_message', 'No events at this time.')}</p>
           </div>
         )}
       </div>
@@ -273,7 +310,11 @@ export default function Events() {
               <X size={18} />
             </button>
 
-            <img src={posterSrc} alt={posterAlt} className="w-full h-[90vh] object-contain bg-transparent rounded-lg" />
+            <img
+              src={posterSrc}
+              alt={posterAlt}
+              className="w-full h-[90vh] object-contain bg-transparent rounded-lg"
+            />
           </div>
         </div>
       )}

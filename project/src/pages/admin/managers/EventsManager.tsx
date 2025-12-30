@@ -1,5 +1,5 @@
 // src/pages/admin/events/EventsManager.tsx
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { Plus, Edit2, Trash2, Save, X } from 'lucide-react';
 import { supabase } from '../../../lib/supabase';
 import RichTextEditor from '../../../components/RichTextEditor';
@@ -23,6 +23,43 @@ interface Event {
 interface RegistrationForm {
   id: string;
   name: string;
+}
+
+const toLocalIsoOrNull = (v?: string | null) => {
+  if (!v) return null;
+  const trimmed = v.trim();
+  if (!trimmed) return null;
+  return trimmed.length === 16 ? `${trimmed}:00` : trimmed;
+};
+
+const toDatetimeLocalValue = (dbValue?: string | null) => {
+  if (!dbValue) return '';
+  const d = new Date(dbValue);
+  if (Number.isNaN(d.getTime())) return '';
+
+  const pad = (n: number) => String(n).padStart(2, '0');
+  const yyyy = d.getFullYear();
+  const mm = pad(d.getMonth() + 1);
+  const dd = pad(d.getDate());
+  const hh = pad(d.getHours());
+  const mi = pad(d.getMinutes());
+  return `${yyyy}-${mm}-${dd}T${hh}:${mi}`;
+};
+
+const slugify = (s: string) =>
+  (s || '')
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+
+function safeDate(v?: string | null) {
+  if (!v) return null;
+  const d = new Date(v);
+  if (Number.isNaN(d.getTime())) return null;
+  return d;
 }
 
 export default function EventsManager() {
@@ -51,21 +88,55 @@ export default function EventsManager() {
   }, []);
 
   const loadEvents = async () => {
-    const { data, error } = await supabase.from('events').select('*').order('event_date', { ascending: false });
+    const { data, error } = await supabase.from('events').select('*');
 
     if (error) {
       console.error('Load events error:', error);
       return;
     }
 
-    setEvents((data as Event[]) || []);
+    const list = (data as Event[]) || [];
+    const now = new Date();
+
+    const featured: Event[] = [];
+    const upcoming: Event[] = [];
+    const nodate: Event[] = [];
+    const past: Event[] = [];
+
+    list.forEach((ev) => {
+      if (ev.is_featured) {
+        featured.push(ev);
+        return;
+      }
+
+      const base = ev.end_date ?? ev.event_date ?? null;
+      const d = safeDate(base);
+
+      if (!base || !d) {
+        nodate.push(ev);
+        return;
+      }
+
+      if (d >= now) upcoming.push(ev);
+      else past.push(ev);
+    });
+
+    const dateSorterAsc = (a: Event, b: Event) => {
+      const da = safeDate(a.end_date ?? a.event_date ?? null)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+      const db = safeDate(b.end_date ?? b.event_date ?? null)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+      return da - db;
+    };
+
+    featured.sort(dateSorterAsc);
+    upcoming.sort(dateSorterAsc);
+    nodate.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+    past.sort(dateSorterAsc);
+
+    setEvents([...featured, ...upcoming, ...nodate, ...past]);
   };
 
   const loadForms = async () => {
-    const { data, error } = await supabase
-      .from('registration_forms')
-      .select('id, name')
-      .eq('is_active', true);
+    const { data, error } = await supabase.from('registration_forms').select('id, name').eq('is_active', true);
 
     if (error) {
       console.error('Load forms error:', error);
@@ -75,42 +146,41 @@ export default function EventsManager() {
     setForms((data as RegistrationForm[]) || []);
   };
 
-  const toIsoOrNull = (v?: string | null) => {
-    if (!v) return null;
-    const d = new Date(v);
-    if (Number.isNaN(d.getTime())) return null;
-    return d.toISOString();
+  const autoSlug = useMemo(() => slugify(formData.title || ''), [formData.title]);
+
+  const buildPayload = (e: Event) => {
+    const title = (e.title || '').trim();
+    const slug = (e.slug || '').trim() || slugify(title);
+
+    return {
+      title: title || null,
+      slug: slug || null,
+      description: e.description || null,
+      location: (e.location || '').trim() || null,
+      event_date: toLocalIsoOrNull(e.event_date), // ✅ allow null
+      end_date: toLocalIsoOrNull(e.end_date),
+      image_url: e.image_url || null,
+      registration_url: (e.registration_url || '').trim() || null,
+      form_id: e.form_id ?? null,
+      is_featured: e.is_featured ?? false,
+      is_published: e.is_published ?? false,
+    };
   };
 
-  const buildPayload = (e: Event) => ({
-    title: e.title?.trim() || null,
-    slug: e.slug?.trim() || null,
-    description: e.description || null,
-    location: e.location?.trim() || null,
-    event_date: toIsoOrNull(e.event_date),
-    end_date: toIsoOrNull(e.end_date),
-    image_url: e.image_url || null,
-    registration_url: e.registration_url || null,
-    form_id: e.form_id ?? null,
-    is_featured: e.is_featured ?? false,
-    is_published: e.is_published ?? false,
-  });
-
   const handleSave = async () => {
+    const title = (formData.title || '').trim();
+    if (!title) return alert('Title is required');
+
+    // ✅ Allow publish even without event_date
     const payload = buildPayload(formData);
 
-    let res;
-    if (editingId) {
-      res = await supabase.from('events').update(payload).eq('id', editingId).select();
-    } else {
-      res = await supabase.from('events').insert(payload).select();
-    }
+    const res = editingId
+      ? await supabase.from('events').update(payload).eq('id', editingId).select()
+      : await supabase.from('events').insert(payload).select();
 
-    const { error } = res;
-
-    if (error) {
-      console.error('Supabase save error:', error);
-      alert(error.message);
+    if (res.error) {
+      console.error('Supabase save error:', res.error);
+      alert(res.error.message);
       return;
     }
 
@@ -135,8 +205,8 @@ export default function EventsManager() {
   const handleEdit = (event: Event) => {
     setFormData({
       ...event,
-      event_date: event.event_date ? new Date(event.event_date).toISOString().slice(0, 16) : null,
-      end_date: event.end_date ? new Date(event.end_date).toISOString().slice(0, 16) : null,
+      event_date: event.event_date ? toDatetimeLocalValue(event.event_date) : null,
+      end_date: event.end_date ? toDatetimeLocalValue(event.end_date) : null,
       title: event.title ?? '',
       slug: event.slug ?? '',
       description: event.description ?? '',
@@ -175,7 +245,23 @@ export default function EventsManager() {
       <div className="flex justify-between items-center mb-6">
         <h2 className="text-3xl font-bold">Events</h2>
         <button
-          onClick={() => setIsCreating(true)}
+          onClick={() => {
+            setIsCreating(true);
+            setEditingId(null);
+            setFormData({
+              title: '',
+              slug: '',
+              description: '',
+              location: '',
+              event_date: null,
+              end_date: null,
+              image_url: '',
+              registration_url: '',
+              form_id: null,
+              is_featured: false,
+              is_published: false,
+            });
+          }}
           className="bg-primary-600 text-white px-4 py-2 rounded-lg hover:bg-primary-700 flex items-center gap-2"
         >
           <Plus size={20} /> Add Event
@@ -192,17 +278,27 @@ export default function EventsManager() {
               <input
                 type="text"
                 value={formData.title ?? ''}
-                onChange={(e) => setFormData({ ...formData, title: e.target.value })}
+                onChange={(e) => {
+                  const title = e.target.value;
+                  setFormData((p) => ({
+                    ...p,
+                    title,
+                    slug: p.slug?.trim() ? p.slug : slugify(title),
+                  }));
+                }}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Slug</label>
+              <label className="block text-sm font-medium mb-1">
+                Slug <span className="text-xs text-gray-500">(auto)</span>
+              </label>
               <input
                 type="text"
                 value={formData.slug ?? ''}
-                onChange={(e) => setFormData({ ...formData, slug: e.target.value })}
+                onChange={(e) => setFormData({ ...formData, slug: slugify(e.target.value) })}
+                placeholder={autoSlug}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
               />
             </div>
@@ -218,31 +314,25 @@ export default function EventsManager() {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">Event Date</label>
+              <label className="block text-sm font-medium mb-1">
+                Event Date <span className="text-xs text-gray-500">(optional)</span>
+              </label>
               <input
                 type="datetime-local"
                 value={formData.event_date ?? ''}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    event_date: e.target.value ? e.target.value : null,
-                  })
-                }
+                onChange={(e) => setFormData({ ...formData, event_date: e.target.value || null })}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">End Date (optional)</label>
+              <label className="block text-sm font-medium mb-1">
+                End Date <span className="text-xs text-gray-500">(optional)</span>
+              </label>
               <input
                 type="datetime-local"
                 value={formData.end_date ?? ''}
-                onChange={(e) =>
-                  setFormData({
-                    ...formData,
-                    end_date: e.target.value ? e.target.value : null,
-                  })
-                }
+                onChange={(e) => setFormData({ ...formData, end_date: e.target.value || null })}
                 className="w-full px-3 py-2 border rounded-lg focus:ring-2 focus:ring-primary-500"
               />
             </div>
@@ -336,8 +426,8 @@ export default function EventsManager() {
             <div>
               <h3 className="font-bold">{event.title || '(Untitled event)'}</h3>
               <p className="text-sm text-gray-600">
-                {(event.location || 'No location')}{' '}
-                {event.event_date ? `• ${new Date(event.event_date).toLocaleDateString()}` : ''}
+                {(event.location || 'No location')}
+                {event.event_date ? ` • ${new Date(event.event_date).toLocaleString()}` : ' • Date TBA'}
               </p>
               <div className="flex gap-2 mt-1">
                 {event.is_featured && (
@@ -350,11 +440,7 @@ export default function EventsManager() {
             </div>
 
             <div className="flex gap-2">
-              <button
-                onClick={() => handleEdit(event)}
-                className="p-2 text-blue-600 hover:bg-blue-50 rounded"
-                title="Edit"
-              >
+              <button onClick={() => handleEdit(event)} className="p-2 text-blue-600 hover:bg-blue-50 rounded" title="Edit">
                 <Edit2 size={18} />
               </button>
               <button
