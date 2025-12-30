@@ -161,7 +161,6 @@ export default function RegistrationFormModal({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // ✅ size check
     const maxBytes = MAX_MB * 1024 * 1024;
     if (file.size > maxBytes) {
       setErrors((p) => ({ ...p, [`${fieldId}_image`]: `Image too large (max ${MAX_MB}MB)` }));
@@ -192,10 +191,12 @@ export default function RegistrationFormModal({
             `Bucket "${AADHAAR_BUCKET}" not found. Create it in Supabase → Storage → Buckets and make it Public.`
           );
         }
-        if (msg.toLowerCase().includes('row') || msg.toLowerCase().includes('policy') || msg.toLowerCase().includes('permission')) {
-          throw new Error(
-            `Upload blocked by Storage policy. Allow uploads for bucket "${AADHAAR_BUCKET}".`
-          );
+        if (
+          msg.toLowerCase().includes('row') ||
+          msg.toLowerCase().includes('policy') ||
+          msg.toLowerCase().includes('permission')
+        ) {
+          throw new Error(`Upload blocked by Storage policy. Allow uploads for bucket "${AADHAAR_BUCKET}".`);
         }
         throw new Error(msg || 'Upload failed');
       }
@@ -231,6 +232,7 @@ export default function RegistrationFormModal({
     const errorClass = errors[field.id] ? 'border-red-500' : 'border-gray-300';
     let placeholder = (field.placeholder || '').trim();
 
+    // ✅ PHONE: country code small + number normal (no weird tiny box)
     if (isPhoneField(field.field_type, field.label)) {
       if (!placeholder) placeholder = 'e.g., 9876543210';
       return (
@@ -238,7 +240,7 @@ export default function RegistrationFormModal({
           <select
             value={selectedCountryCodes[field.id] || '+91'}
             onChange={(e) => handleCountryCodeChange(field.id, e.target.value)}
-            className={`${base} ${errorClass} h-10 w-28 px-2 text-xs bg-white`}
+            className={`${base} ${errorClass} h-10 shrink-0 w-24 sm:w-28 px-2 text-sm bg-white`}
           >
             {countryCodes.map((c, idx) => (
               <option key={`${c.code}-${c.name}-${idx}`} value={c.code}>
@@ -247,13 +249,21 @@ export default function RegistrationFormModal({
             ))}
           </select>
 
-          <input
-            type="tel"
-            value={formData[field.id] || ''}
-            onChange={(e) => handleFieldChange(field.id, e.target.value)}
-            placeholder={placeholder}
-            className={`${base} ${errorClass} h-10 flex-1 px-3 text-sm`}
-          />
+          {/* wrapper prevents extra small "box" on the right and keeps full width */}
+          <div className="flex-1 min-w-0">
+            <input
+              type="tel"
+              inputMode="numeric"
+              autoComplete="tel"
+              value={formData[field.id] || ''}
+              onChange={(e) =>
+                // optional: keep only digits
+                handleFieldChange(field.id, (e.target.value || '').replace(/[^\d]/g, ''))
+              }
+              placeholder={placeholder}
+              className={`${base} ${errorClass} h-10 px-3 text-sm`}
+            />
+          </div>
         </div>
       );
     }
@@ -265,11 +275,13 @@ export default function RegistrationFormModal({
         <div className="space-y-2">
           <input
             type="text"
+            inputMode="numeric"
             value={formData[field.id] || ''}
-            onChange={(e) => handleFieldChange(field.id, e.target.value)}
+            onChange={(e) => handleFieldChange(field.id, (e.target.value || '').replace(/[^\d]/g, ''))}
             placeholder={placeholder}
             className={`${base} ${errorClass} h-10 px-3 text-sm`}
             maxLength={12}
+            autoComplete="off"
           />
 
           <div className="border-t pt-2">
@@ -296,17 +308,11 @@ export default function RegistrationFormModal({
             </label>
 
             {uploadingImages[field.id] && <p className="mt-1 text-xs text-blue-600">Uploading...</p>}
-            {errors[`${field.id}_image`] && (
-              <p className="mt-1 text-xs text-red-600">{errors[`${field.id}_image`]}</p>
-            )}
+            {errors[`${field.id}_image`] && <p className="mt-1 text-xs text-red-600">{errors[`${field.id}_image`]}</p>}
 
             {aadhaarImages[field.id] && (
               <div className="mt-2 relative inline-block">
-                <img
-                  src={aadhaarImages[field.id]}
-                  alt="Aadhaar"
-                  className="h-20 w-auto object-cover rounded-lg border border-gray-300"
-                />
+                <img src={aadhaarImages[field.id]} alt="Aadhaar" className="h-20 w-auto object-cover rounded-lg border border-gray-300" />
                 <button
                   type="button"
                   onClick={() => clearAadhaarImage(field.id)}
